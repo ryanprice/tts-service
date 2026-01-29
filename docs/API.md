@@ -1,6 +1,11 @@
-# Kokoro TTS Service - API Reference
+# TTS Service with Whisper Alignment - API Reference
 
-Complete API documentation for the Kokoro TTS Service running on port 8000.
+Complete API documentation for the TTS Gateway Service running on port 8000.
+
+This service provides:
+- Text-to-speech generation via Kokoro TTS (GPU accelerated)
+- Word-level alignment via Whisper (CPU)
+- Combined TTS + alignment in a single endpoint
 
 ## Base URL
 
@@ -138,7 +143,164 @@ curl http://localhost:8000/v1/audio/voices
 
 ---
 
-### 4. Web Interface
+### 4. Audio Alignment (Whisper)
+
+Get word-level timestamps from audio using Whisper.
+
+**Endpoint**: `POST /v1/audio/align`
+
+**Request Headers**:
+```
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "audio_file": "base64_encoded_audio",
+  "language": "en"
+}
+```
+
+**Parameters**:
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `audio_file` | string | Yes | - | Base64 encoded audio file (MP3, WAV, etc.) |
+| `language` | string | No | auto-detect | Language code (e.g., `"en"`, `"ja"`, `"zh"`) |
+
+**Response**:
+```json
+{
+  "words": [
+    {"word": "Hello", "start": 0.0, "end": 0.32},
+    {"word": "world", "start": 0.35, "end": 0.72}
+  ]
+}
+```
+
+**Example Request (Python)**:
+```python
+import base64
+import requests
+
+# Read audio file
+with open("speech.mp3", "rb") as f:
+    audio_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+response = requests.post(
+    "http://localhost:8000/v1/audio/align",
+    json={"audio_file": audio_base64}
+)
+
+words = response.json()["words"]
+for word in words:
+    print(f"{word['word']}: {word['start']:.2f}s - {word['end']:.2f}s")
+```
+
+---
+
+### 5. Speech with Alignment (Combined)
+
+Generate speech AND get word-level alignment in a single request. This is the recommended endpoint for applications that need both audio and timing data.
+
+**Endpoint**: `POST /v1/audio/speech_with_alignment`
+
+**Request Headers**:
+```
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "model": "tts-1",
+  "input": "Text to convert to speech",
+  "voice": "alloy",
+  "response_format": "mp3",
+  "speed": 1.0,
+  "language": "en"
+}
+```
+
+**Parameters**:
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `model` | string | Yes | - | Model ID (use `"tts-1"`) |
+| `input` | string | Yes | - | Text to synthesize |
+| `voice` | string | No | `"af_alloy"` | Voice ID |
+| `response_format` | string | No | `"mp3"` | Audio format: `mp3`, `wav`, `opus`, `flac` |
+| `speed` | number | No | `1.0` | Speech speed (0.5 to 2.0) |
+| `language` | string | No | auto-detect | Language for alignment |
+
+**Response**:
+```json
+{
+  "audio": "base64_encoded_mp3_data",
+  "words": [
+    {"word": "Hello", "start": 0.0, "end": 0.32},
+    {"word": "world", "start": 0.35, "end": 0.72}
+  ],
+  "format": "mp3"
+}
+```
+
+**Example Request (Python)**:
+```python
+import base64
+import requests
+
+response = requests.post(
+    "http://localhost:8000/v1/audio/speech_with_alignment",
+    json={
+        "model": "tts-1",
+        "input": "The quick brown fox jumps over the lazy dog.",
+        "voice": "alloy",
+        "response_format": "mp3"
+    }
+)
+
+data = response.json()
+
+# Save audio
+audio_bytes = base64.b64decode(data["audio"])
+with open("output.mp3", "wb") as f:
+    f.write(audio_bytes)
+
+# Print word timings
+for word in data["words"]:
+    print(f"{word['word']}: {word['start']:.2f}s - {word['end']:.2f}s")
+```
+
+**Example Request (JavaScript)**:
+```javascript
+const response = await fetch('http://localhost:8000/v1/audio/speech_with_alignment', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    model: 'tts-1',
+    input: 'Hello world',
+    voice: 'alloy',
+    response_format: 'mp3'
+  })
+});
+
+const data = await response.json();
+
+// Decode audio
+const audioBytes = Uint8Array.from(atob(data.audio), c => c.charCodeAt(0));
+const blob = new Blob([audioBytes], { type: 'audio/mpeg' });
+
+// Access word timings
+data.words.forEach(word => {
+  console.log(`${word.word}: ${word.start}s - ${word.end}s`);
+});
+```
+
+---
+
+### 6. Web Interface
 
 Access the web-based testing interface.
 
@@ -150,7 +312,7 @@ Access the web-based testing interface.
 
 ---
 
-### 5. API Documentation
+### 7. API Documentation
 
 Interactive API documentation (Swagger UI).
 

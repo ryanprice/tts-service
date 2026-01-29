@@ -1,14 +1,39 @@
 version: '3.8'
 
 services:
-  tts-service:
-    image: dustynv/kokoro-tts:fastapi-r36.4.0
-
-    container_name: kokoro-tts-service
-
+  # TTS Gateway with Whisper alignment
+  tts-gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: tts-gateway
     ports:
-      - "8000:8880"  # External port 8000 maps to internal Kokoro port 8880
+      - "8000:8000"  # External port - all requests go through gateway
+    environment:
+      - TTS_BACKEND_URL=http://kokoro-tts:8880
+      - WHISPER_MODEL=${WHISPER_MODEL:-tiny}
+      - WHISPER_DEVICE=cpu
+    volumes:
+      # Cache whisper models
+      - whisper-cache:/root/.cache/huggingface
+    depends_on:
+      kokoro-tts:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
+  # Kokoro TTS backend (internal only)
+  kokoro-tts:
+    image: dustynv/kokoro-tts:fastapi-r36.4.0
+    container_name: kokoro-tts-service
+    # No external ports - only accessible through gateway
+    expose:
+      - "8880"
     volumes:
       # Persistent model storage (survives container rebuilds)
       - ./models:/data/models/huggingface/hub:rw
@@ -16,7 +41,6 @@ services:
       - ./audio:/data/audio:rw
       # Logs
       - ./logs:/var/log/kokoro:rw
-
     environment:
       - USE_GPU=true              # Enable GPU acceleration
       - USE_ONNX=false            # Use PyTorch (better for 8GB VRAM)
@@ -24,26 +48,25 @@ services:
       - KOKORO_ROOT=/opt/kokoro-fastapi
       - TRANSFORMERS_CACHE=/data/models/huggingface
       - HF_HOME=/data/models/huggingface
-
     runtime: nvidia  # NVIDIA GPU support
     restart: unless-stopped
-
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8880/v1/models"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 90s
-
     deploy:
       resources:
         limits:
           memory: 6G
         reservations:
           memory: 2G
-
     # Ensure NVIDIA runtime is available
     devices:
       - /dev/nvidia0
       - /dev/nvidia-modeset
       - /dev/nvidiactl
+
+volumes:
+  whisper-cache:

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-API tests for Kokoro TTS Service
-Tests all endpoints and validates responses
+API tests for TTS Gateway Service
+Tests all endpoints including Whisper alignment
 """
 
+import base64
 import requests
 import json
 import time
@@ -15,11 +16,15 @@ BASE_URL = "http://localhost:8000"
 
 def test_service_available():
     """Test if service is running"""
-    print("[1/6] Testing service availability...")
+    print("[1/8] Testing service availability...")
     try:
-        response = requests.get(f"{BASE_URL}/v1/models", timeout=5)
+        response = requests.get(f"{BASE_URL}/", timeout=5)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        data = response.json()
+        assert "service" in data
         print("✅ Service is available")
+        print(f"   Service: {data.get('service')}")
+        print(f"   Whisper model: {data.get('whisper_model')}")
         return True
     except Exception as e:
         print(f"❌ Service not available: {e}")
@@ -28,7 +33,7 @@ def test_service_available():
 
 def test_models_endpoint():
     """Test /v1/models endpoint"""
-    print("\n[2/6] Testing /v1/models endpoint...")
+    print("\n[2/8] Testing /v1/models endpoint...")
     try:
         response = requests.get(f"{BASE_URL}/v1/models", timeout=5)
         assert response.status_code == 200
@@ -44,19 +49,25 @@ def test_models_endpoint():
 
 def test_voices_endpoint():
     """Test /v1/audio/voices endpoint"""
-    print("\n[3/6] Testing /v1/audio/voices endpoint...")
+    print("\n[3/8] Testing /v1/audio/voices endpoint...")
     try:
         response = requests.get(f"{BASE_URL}/v1/audio/voices", timeout=5)
         assert response.status_code == 200
         data = response.json()
 
-        # Check if voices are returned
         if "voices" in data:
             voices = data["voices"]
             print(f"✅ Voices endpoint working")
             print(f"   Found {len(voices)} voices")
             if voices:
-                print(f"   Sample voices: {[v.get('id', v.get('name', str(v))) for v in voices[:3]]}")
+                # Handle both dict and string voice formats
+                sample = []
+                for v in voices[:3]:
+                    if isinstance(v, dict):
+                        sample.append(v.get('id', v.get('name', str(v))))
+                    else:
+                        sample.append(str(v))
+                print(f"   Sample voices: {sample}")
         else:
             print(f"✅ Voices endpoint working")
             print(f"   Response format: {list(data.keys())}")
@@ -69,7 +80,7 @@ def test_voices_endpoint():
 
 def test_speech_generation_mp3():
     """Test speech generation with MP3 format"""
-    print("\n[4/6] Testing speech generation (MP3)...")
+    print("\n[4/8] Testing speech generation (MP3)...")
     try:
         payload = {
             "model": "tts-1",
@@ -97,13 +108,9 @@ def test_speech_generation_mp3():
         print(f"   File size: {len(response.content)} bytes")
         print(f"   Generation time: {duration:.2f}s")
 
-        # Calculate approximate RTF
-        # Assuming ~150 words/min speaking rate
-        word_count = len(payload["input"].split())
-        estimated_duration = (word_count / 150) * 60  # seconds
-        if estimated_duration > 0:
-            rtf = duration / estimated_duration
-            print(f"   Estimated RTF: {rtf:.2f} (target: <1.0)")
+        # Save for alignment test
+        global test_audio_bytes
+        test_audio_bytes = response.content
 
         return True
     except Exception as e:
@@ -111,9 +118,103 @@ def test_speech_generation_mp3():
         return False
 
 
+def test_audio_alignment():
+    """Test /v1/audio/align endpoint"""
+    print("\n[5/8] Testing audio alignment endpoint...")
+    try:
+        # First generate some audio to align
+        tts_payload = {
+            "model": "tts-1",
+            "input": "Hello world, this is a test.",
+            "voice": "af_alloy",
+            "response_format": "mp3"
+        }
+
+        tts_response = requests.post(
+            f"{BASE_URL}/v1/audio/speech",
+            json=tts_payload,
+            timeout=30
+        )
+        assert tts_response.status_code == 200, "Failed to generate TTS for alignment test"
+
+        # Now test alignment
+        audio_base64 = base64.b64encode(tts_response.content).decode("utf-8")
+        align_payload = {
+            "audio_file": audio_base64
+        }
+
+        start_time = time.time()
+        response = requests.post(
+            f"{BASE_URL}/v1/audio/align",
+            json=align_payload,
+            timeout=60
+        )
+        duration = time.time() - start_time
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        data = response.json()
+        assert "words" in data, "Response missing 'words' field"
+
+        words = data["words"]
+        print(f"✅ Audio alignment successful")
+        print(f"   Found {len(words)} words")
+        print(f"   Alignment time: {duration:.2f}s")
+        if words:
+            print(f"   Sample: {words[:3]}")
+
+        return True
+    except Exception as e:
+        print(f"❌ Audio alignment failed: {e}")
+        return False
+
+
+def test_speech_with_alignment():
+    """Test /v1/audio/speech_with_alignment combined endpoint"""
+    print("\n[6/8] Testing combined speech + alignment endpoint...")
+    try:
+        payload = {
+            "model": "tts-1",
+            "input": "The quick brown fox jumps over the lazy dog.",
+            "voice": "af_alloy",
+            "response_format": "mp3"
+        }
+
+        start_time = time.time()
+        response = requests.post(
+            f"{BASE_URL}/v1/audio/speech_with_alignment",
+            json=payload,
+            timeout=90
+        )
+        duration = time.time() - start_time
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        data = response.json()
+
+        assert "audio" in data, "Response missing 'audio' field"
+        assert "words" in data, "Response missing 'words' field"
+        assert "format" in data, "Response missing 'format' field"
+
+        # Verify audio can be decoded
+        audio_bytes = base64.b64decode(data["audio"])
+        assert len(audio_bytes) > 1000, f"Audio too small: {len(audio_bytes)} bytes"
+
+        words = data["words"]
+        print(f"✅ Combined speech + alignment successful")
+        print(f"   Audio size: {len(audio_bytes)} bytes")
+        print(f"   Found {len(words)} words")
+        print(f"   Total time: {duration:.2f}s")
+        if words:
+            print(f"   Word timings: {words[:5]}")
+
+        return True
+    except Exception as e:
+        print(f"❌ Combined speech + alignment failed: {e}")
+        return False
+
+
 def test_voice_selection():
     """Test different voice selection"""
-    print("\n[5/6] Testing voice selection...")
+    print("\n[7/8] Testing voice selection...")
     try:
         voices_to_test = ["af_alloy", "af_bella", "af_nova"]
         results = []
@@ -135,7 +236,6 @@ def test_voice_selection():
             if response.status_code == 200:
                 results.append(f"{voice}: {len(response.content)} bytes")
             else:
-                # Voice might not be available
                 results.append(f"{voice}: not available (HTTP {response.status_code})")
 
         print(f"✅ Voice selection tested")
@@ -150,7 +250,7 @@ def test_voice_selection():
 
 def test_error_handling():
     """Test error handling with invalid requests"""
-    print("\n[6/6] Testing error handling...")
+    print("\n[8/8] Testing error handling...")
     try:
         # Test with missing required fields
         payload = {
@@ -168,7 +268,15 @@ def test_error_handling():
         assert response.status_code >= 400 and response.status_code < 500, \
             f"Expected 4xx error, got {response.status_code}"
 
-        print(f"✅ Error handling working (HTTP {response.status_code})")
+        # Test invalid base64 for alignment
+        response = requests.post(
+            f"{BASE_URL}/v1/audio/align",
+            json={"audio_file": "not-valid-base64!!!"},
+            timeout=10
+        )
+        assert response.status_code >= 400, f"Expected error for invalid base64, got {response.status_code}"
+
+        print(f"✅ Error handling working")
         return True
     except Exception as e:
         print(f"❌ Error handling test failed: {e}")
@@ -178,7 +286,8 @@ def test_error_handling():
 def main():
     """Run all tests"""
     print("=" * 50)
-    print("Kokoro TTS Service API Tests")
+    print("TTS Gateway Service API Tests")
+    print("(with Whisper Alignment)")
     print("=" * 50)
     print()
 
@@ -187,6 +296,8 @@ def main():
         test_models_endpoint,
         test_voices_endpoint,
         test_speech_generation_mp3,
+        test_audio_alignment,
+        test_speech_with_alignment,
         test_voice_selection,
         test_error_handling,
     ]

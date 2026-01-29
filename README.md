@@ -1,17 +1,19 @@
-# Kokoro TTS Service
+# TTS Service with Whisper Alignment
 
-A text-to-speech service running on Jetson Nano Orin (8GB VRAM) using FastKoko, providing an OpenAI-compatible API on port 8000.
+A text-to-speech service with word-level alignment, running on Jetson Nano Orin (8GB VRAM). Combines Kokoro TTS (GPU) with Whisper alignment (CPU) via a FastAPI gateway.
 
 ## Features
 
-- 🎤 **High-quality text-to-speech** using FastKoko
-- 🔊 **Multiple voices** in English, Japanese, and Chinese
-- 🎵 **Multiple formats** (MP3, WAV, OPUS, FLAC)
-- 🚀 **GPU-accelerated** on NVIDIA Jetson
-- 🌐 **OpenAI-compatible API** for easy integration
-- 🎨 **Web UI** for testing and demos
-- ⚡ **Real-time performance** (RTF 0.26 - 4x faster than real-time!)
-- 💾 **Memory efficient** (minimal VRAM usage on 8GB Jetson)
+- High-quality text-to-speech using Kokoro/FastKoko
+- Word-level timestamp alignment using faster-whisper
+- Combined endpoint: TTS + alignment in one request
+- Multiple voices in English, Japanese, and Chinese
+- Multiple formats (MP3, WAV, OPUS, FLAC)
+- GPU-accelerated TTS on NVIDIA Jetson
+- CPU-based Whisper alignment (preserves GPU for TTS)
+- OpenAI-compatible API for easy integration
+- Web UI for testing and demos
+- Real-time performance (RTF 0.26 - 4x faster than real-time!)
 
 ## Overview
 
@@ -100,6 +102,52 @@ curl http://localhost:8000/v1/audio/voices
 
 ```bash
 curl http://localhost:8000/v1/models
+```
+
+#### Get Word Alignment (from existing audio)
+
+```bash
+# First, base64 encode your audio file
+AUDIO_B64=$(base64 -w 0 speech.mp3)
+
+curl -X POST http://localhost:8000/v1/audio/align \
+  -H "Content-Type: application/json" \
+  -d "{\"audio_file\": \"$AUDIO_B64\"}"
+```
+
+Response:
+```json
+{
+  "words": [
+    {"word": "Hello", "start": 0.0, "end": 0.32},
+    {"word": "world", "start": 0.35, "end": 0.72}
+  ]
+}
+```
+
+#### Generate Speech WITH Alignment (Combined - Recommended)
+
+```bash
+curl -X POST http://localhost:8000/v1/audio/speech_with_alignment \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "tts-1",
+    "input": "Hello world",
+    "voice": "alloy",
+    "response_format": "mp3"
+  }'
+```
+
+Response:
+```json
+{
+  "audio": "base64_encoded_mp3",
+  "words": [
+    {"word": "Hello", "start": 0.0, "end": 0.32},
+    {"word": "world", "start": 0.35, "end": 0.72}
+  ],
+  "format": "mp3"
+}
 ```
 
 ### Python Example
@@ -236,34 +284,44 @@ Test: "This is a test of the Kokoro text to speech service."
 ┌─────────────────────────────────────────┐
 │         Your Application                │
 └──────────────┬──────────────────────────┘
-               │ HTTP POST
+               │ HTTP (Port 8000)
                ▼
+┌─────────────────────────────────────────────────────────┐
+│           TTS Gateway (FastAPI)                         │
+│  ┌───────────────────┐    ┌─────────────────────────┐  │
+│  │  TTS Proxy        │    │  Whisper Alignment      │  │
+│  │  /v1/audio/speech │    │  /v1/audio/align        │  │
+│  └─────────┬─────────┘    │  (CPU - faster-whisper) │  │
+│            │              └─────────────────────────┘  │
+│            │              ┌─────────────────────────┐  │
+│            │              │  Combined Endpoint      │  │
+│            │              │  /v1/audio/speech_with_ │  │
+│            │              │  alignment              │  │
+│            │              └─────────────────────────┘  │
+└────────────┼───────────────────────────────────────────┘
+             │ Internal (Port 8880)
+             ▼
 ┌─────────────────────────────────────────┐
-│     Kokoro TTS Service (Port 8000)      │
+│     Kokoro TTS Backend (Docker)         │
 │  ┌────────────────────────────────────┐ │
-│  │      FastKoko REST API             │ │
-│  └──────────────┬─────────────────────┘ │
-│                 ▼                        │
-│  ┌────────────────────────────────────┐ │
-│  │    Kokoro TTS Model (PyTorch)     │ │
+│  │    Kokoro TTS Model (PyTorch)      │ │
 │  │         + GPU Acceleration         │ │
-│  └──────────────┬─────────────────────┘ │
-└─────────────────┼───────────────────────┘
-                  ▼
-          ┌───────────────┐
-          │  Audio Output │
-          │     (MP3)     │
-          └───────────────┘
+│  └────────────────────────────────────┘ │
+└─────────────────────────────────────────┘
 ```
 
 ## Directory Structure
 
 ```
 tts-service/
-├── docker-compose.yml          # Service orchestration
+├── docker-compose.yml          # Service orchestration (gateway + TTS)
 ├── kokoro-tts.service          # systemd unit file
 ├── .env                        # Environment configuration
 ├── README.md                   # This file
+├── gateway/                    # TTS Gateway with Whisper
+│   ├── main.py                # FastAPI application
+│   ├── requirements.txt       # Python dependencies
+│   └── Dockerfile             # Gateway container
 ├── config/
 │   └── voices.json            # Voice metadata
 ├── scripts/
@@ -275,6 +333,8 @@ tts-service/
 │   └── uninstall-service.sh   # Uninstall systemd service
 ├── tests/
 │   └── test_api.py            # Python API tests
+├── docs/
+│   └── API.md                 # API documentation
 ├── models/                     # Model storage (auto-populated)
 ├── audio/                      # Generated audio output
 └── logs/                       # Service logs
@@ -291,6 +351,13 @@ Edit `.env` to customize:
 SERVICE_PORT=8000              # External port
 USE_GPU=true                   # Enable GPU acceleration
 USE_ONNX=false                 # Use PyTorch (better for 8GB VRAM)
+
+# Whisper Configuration (for word alignment)
+# Options: tiny, base, small, medium, large-v3
+# tiny: ~39MB, fastest, good for TTS alignment
+# base: ~74MB, balanced
+# small: ~244MB, better accuracy
+WHISPER_MODEL=tiny             # Recommended for Jetson
 
 # Resource Limits
 MAX_CONCURRENT_REQUESTS=2      # Concurrent request limit
