@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  tts-service:
+    image: dustynv/kokoro-tts:fastapi-r36.4.0
+
+    container_name: kokoro-tts-service
+
+    ports:
+      - "8000:8880"  # External port 8000 maps to internal Kokoro port 8880
+
+    volumes:
+      # Persistent model storage (survives container rebuilds)
+      - ./models:/data/models/huggingface/hub:rw
+      # Generated audio output
+      - ./audio:/data/audio:rw
+      # Logs
+      - ./logs:/var/log/kokoro:rw
+
+    environment:
+      - USE_GPU=true              # Enable GPU acceleration
+      - USE_ONNX=false            # Use PyTorch (better for 8GB VRAM)
+      - PYTHONPATH=/opt/kokoro-fastapi:/opt/kokoro-fastapi/api
+      - KOKORO_ROOT=/opt/kokoro-fastapi
+      - TRANSFORMERS_CACHE=/data/models/huggingface
+      - HF_HOME=/data/models/huggingface
+
+    runtime: nvidia  # NVIDIA GPU support
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8880/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 2G
+
+    # Ensure NVIDIA runtime is available
+    devices:
+      - /dev/nvidia0
+      - /dev/nvidia-modeset
+      - /dev/nvidiactl

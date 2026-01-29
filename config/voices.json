@@ -1,0 +1,95 @@
+{
+  "description": "Voice configuration reference for Kokoro TTS",
+  "note": "Actual available voices are queried from /v1/audio/voices endpoint",
+  "default_voice": "af_alloy",
+  "supported_formats": ["mp3", "wav", "opus", "flac"],
+  "voice_categories": {
+    "english": {
+      "prefix": "af",
+      "description": "English voices (American/Female variations)",
+      "voices": [
+        {
+          "id": "af_alloy",
+          "name": "Alloy",
+          "language": "en",
+          "gender": "neutral",
+          "description": "Balanced, clear voice suitable for general purposes"
+        },
+        {
+          "id": "af_bella",
+          "name": "Bella",
+          "language": "en",
+          "gender": "female",
+          "description": "Warm, friendly female voice"
+        },
+        {
+          "id": "af_nova",
+          "name": "Nova",
+          "language": "en",
+          "gender": "neutral",
+          "description": "Modern, energetic voice"
+        },
+        {
+          "id": "af_shimmer",
+          "name": "Shimmer",
+          "language": "en",
+          "gender": "female",
+          "description": "Bright, expressive voice"
+        }
+      ]
+    },
+    "japanese": {
+      "prefix": "ja",
+      "description": "Japanese voices",
+      "voices": [
+        {
+          "id": "ja_alloy",
+          "name": "Alloy (Japanese)",
+          "language": "ja",
+          "gender": "neutral",
+          "description": "Japanese version of Alloy voice"
+        },
+        {
+          "id": "ja_bella",
+          "name": "Bella (Japanese)",
+          "language": "ja",
+          "gender": "female",
+          "description": "Japanese version of Bella voice"
+        }
+      ]
+    },
+    "chinese": {
+      "prefix": "zh",
+      "description": "Chinese voices",
+      "voices": [
+        {
+          "id": "zh_alloy",
+          "name": "Alloy (Chinese)",
+          "language": "zh",
+          "gender": "neutral",
+          "description": "Chinese version of Alloy voice"
+        }
+      ]
+    }
+  },
+  "usage_notes": {
+    "voice_parameter": "Use the 'id' field when making API requests (e.g., 'af_alloy')",
+    "short_names": "Short names without prefix also work (e.g., 'alloy' instead of 'af_alloy')",
+    "language_auto_detection": "The service may auto-detect language based on input text",
+    "query_available": "Always check /v1/audio/voices for the most up-to-date list"
+  },
+  "example_requests": {
+    "basic": {
+      "model": "tts-1",
+      "input": "Hello, how are you?",
+      "voice": "af_alloy",
+      "response_format": "mp3"
+    },
+    "japanese": {
+      "model": "tts-1",
+      "input": "こんにちは",
+      "voice": "ja_bella",
+      "response_format": "mp3"
+    }
+  }
+}
