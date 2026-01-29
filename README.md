@@ -176,6 +176,39 @@ docker compose logs -f
 ./scripts/stop.sh && ./scripts/start.sh
 ```
 
+### Run as systemd Service
+
+To have the TTS service start automatically on boot, install it as a systemd service:
+
+```bash
+sudo ./scripts/install-service.sh
+```
+
+Then manage it with standard systemctl commands:
+
+```bash
+# Start the service
+sudo systemctl start kokoro-tts
+
+# Stop the service
+sudo systemctl stop kokoro-tts
+
+# Restart the service
+sudo systemctl restart kokoro-tts
+
+# Check status
+sudo systemctl status kokoro-tts
+
+# View logs
+journalctl -u kokoro-tts -f
+```
+
+To uninstall the systemd service:
+
+```bash
+sudo ./scripts/uninstall-service.sh
+```
+
 ## Performance
 
 Optimized for Jetson Nano Orin with 8GB VRAM:
@@ -228,6 +261,7 @@ Test: "This is a test of the Kokoro text to speech service."
 ```
 tts-service/
 ├── docker-compose.yml          # Service orchestration
+├── kokoro-tts.service          # systemd unit file
 ├── .env                        # Environment configuration
 ├── README.md                   # This file
 ├── config/
@@ -236,7 +270,9 @@ tts-service/
 │   ├── build.sh               # Build service
 │   ├── start.sh               # Start service
 │   ├── stop.sh                # Stop service
-│   └── test.sh                # Run tests
+│   ├── test.sh                # Run tests
+│   ├── install-service.sh     # Install systemd service
+│   └── uninstall-service.sh   # Uninstall systemd service
 ├── tests/
 │   └── test_api.py            # Python API tests
 ├── models/                     # Model storage (auto-populated)
