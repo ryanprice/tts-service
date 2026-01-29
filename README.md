@@ -2,6 +2,8 @@
 
 A text-to-speech service running on Jetson Nano Orin (8GB VRAM) using FastKoko, providing an OpenAI-compatible API on port 8000.
 
+<img width="1270" height="880" alt="image" src="https://github.com/user-attachments/assets/e17fbf15-51c2-495e-9cf4-9a14d87d6840" />
+
 ## Features
 
 - 🎤 **High-quality text-to-speech** using FastKoko
