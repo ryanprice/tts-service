@@ -103,10 +103,10 @@ class SpeechWithAlignmentResponse(BaseModel):
 
 # === Helper Functions ===
 
-async def proxy_to_tts(path: str, method: str = "GET", json_data: dict = None) -> httpx.Response:
+async def proxy_to_tts(path: str, method: str = "GET", json_data: dict = None, follow_redirects: bool = False) -> httpx.Response:
     """Proxy request to TTS backend."""
     url = f"{TTS_BACKEND_URL}{path}"
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=follow_redirects) as client:
         if method == "GET":
             return await client.get(url)
         elif method == "POST":
@@ -331,11 +331,14 @@ async def generate_speech_with_alignment(request: SpeechWithAlignmentRequest):
 # === Web UI Proxy ===
 
 @app.get("/web")
+@app.get("/web/")
 @app.get("/web/{path:path}")
 async def proxy_web(path: str = ""):
     """Proxy web UI requests to TTS backend."""
     try:
-        response = await proxy_to_tts(f"/web/{path}" if path else "/web")
+        # Always include trailing slash to match backend's expected format
+        web_path = f"/web/{path}" if path else "/web/"
+        response = await proxy_to_tts(web_path, follow_redirects=True)
         return Response(
             content=response.content,
             status_code=response.status_code,
